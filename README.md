@@ -1,5 +1,7 @@
 # llm-io-map
 
+[![skills.sh](https://skills.sh/b/haroon0x/llm-io-map)](https://skills.sh/haroon0x/llm-io-map)
+
 **An agent skill that maps every LLM call site in a codebase and reconstructs what actually goes in and out.**
 
 Point your agent at a repo and it produces:
