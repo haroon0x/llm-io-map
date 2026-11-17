@@ -1,7 +1,5 @@
 # llm-io-map
 
-[![skills.sh](https://skills.sh/b/haroon0x/llm-io-map)](https://skills.sh/haroon0x/llm-io-map)
-
 **An agent skill that maps every LLM call site in a codebase and reconstructs what actually goes in and out.**
 
 Point your agent at a repo and it produces:
@@ -42,6 +40,8 @@ Most "map the LLM usage" prompts give you a plausible-looking report with invent
 Every payload carries provenance, a reproduce command, redactions applied, and the concrete input it represents.
 
 ## Install
+
+Listed on [skills.sh](https://www.skills.sh/haroon0x/llm-io-map).
 
 ```bash
 npx skills add haroon0x/llm-io-map
