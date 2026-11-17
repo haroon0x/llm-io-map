@@ -64,7 +64,7 @@ Rules:
 - Write the short profile into `manifest.json` and `extract/profile.json`.
 
 ### Phase 1 — Enumerate call sites
-Run the shipped sweep as a starting point, then verify and extend it by reading code:
+Run the shipped sweep as a starting point, then verify and extend it by reading code. Every candidate you rule out goes into `manifest.dismissed[]` with a category and a reason — a silent omission is a failed map:
 
 ```bash
 bash scripts/discover.sh "<repo-root>"      # or the copy in .llmmap/extract/
@@ -94,7 +94,7 @@ For each candidate record: `file:line`, the call chain up to the entrypoint, the
 4. **Responses**: recorded > user-approved live call > representative from fixtures > `unresolved`. Never copy a response from documentation as if it were this app's output.
 
 ### Phase 4 — Build the manifest
-Follow `references/manifest-schema.md`. One entry per call site plus entrypoints and flow edges. Each payload carries: grade, provenance (file or command), capture file path, the concrete input it represents, redactions applied, and a reproduce command. Redact with `scripts/redact.py` and record the rules.
+Follow `references/manifest-schema.md`. One entry per call site, plus entrypoints, flow edges, and a `dismissed[]` list for ruled-out candidates. Each payload carries: **request grade** and **response grade** (separately — a null response is `unresolved`), provenance (file or command), capture file path, the concrete input it represents, redactions applied, and a reproduce command. Redact with `scripts/redact.py` and record the rules.
 
 ### Phase 5 — Render the viewer
 Render with the shipped script — do not hand-edit the report:
@@ -119,6 +119,8 @@ Personalize styling to the repo only if trivial (name/logo/colors). Keep the dat
 ### Phase 6 — Verify (do not skip)
 Run `references/verification.md`. Minimum bar:
 - [ ] every discovered call site is in the manifest, or blocked with a reason
+- [ ] every ruled-out candidate is in `manifest.dismissed[]` with category + reason
+- [ ] request and response grades are separate; `summary.evidence` and `summary.response_evidence` match the payloads
 - [ ] every payload has a grade + provenance + reproduce command
 - [ ] no secrets/tokens/user PII in captures (redaction pass, then re-scan)
 - [ ] no fabricated payloads; representative ones are labeled

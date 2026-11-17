@@ -91,6 +91,31 @@ def handler(request: httpx.Request) -> httpx.Response:
 client = OpenAI(api_key="test", http_client=httpx.Client(transport=httpx.MockTransport(handler)))
 ```
 
+**Raw httpx / requests (no SDK client to inject)** — when the code under test constructs `httpx.AsyncClient` itself, patch the module symbol for the duration of the call, then restore it:
+
+```python
+import httpx, pytest
+
+@pytest.mark.asyncio
+async def test_capture(monkeypatch):
+    real_client = httpx.AsyncClient
+    captured = []
+
+    def client_factory(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(lambda request: (
+            captured.append({"body": request.content.decode()}),
+            httpx.Response(200, json=canned_fixture),
+        )[1])
+        return real_client(*args, **kwargs)
+
+    monkeypatch.setattr("your_module.httpx.AsyncClient", client_factory)
+    await your_module.search_openai(config, "refund policy")
+    # captured[0]["body"] is the serialized wire request; the response is still
+    # "unresolved" for evidence purposes unless canned_fixture is real recorded output.
+```
+
+Patching `httpx.AsyncClient` inside the module works because `import httpx` binds the module, not the class. Patching `httpx.AsyncBaseTransport` also works if the code passes a transport through. Do not patch `httpx.Client` globally — restore via `monkeypatch`/`afterEach`.
+
 **LangChain** — `BaseCallbackHandler.on_chat_model_start` / `on_llm_start` (prompts only → `reconstructed`); for bytes, patch the underlying client or intercept httpx.
 
 **LiteLLM** — `litellm.callbacks` (success/failure) or point `api_base` at the recorder.

@@ -5,10 +5,10 @@
  * Usage:
  *   node render.mjs [manifest] [out.html] [--template viewer.template.html]
  *
- * Defaults (when run from .llmmap/extract/):
- *   manifest = ./.llmmap/manifest.json
- *   template = ./viewer.template.html   (next to this script)
- *   out      = ./.llmmap/report.html
+ * Defaults:
+ *   manifest = <cwd>/.llmmap/manifest.json   (run from the repo root)
+ *   template = viewer.template.html next to this script
+ *   out      = <cwd>/.llmmap/report.html
  *
  * The template must contain exactly one marker line:
  *   const MANIFEST = /*__LLMMAP_MANIFEST__*\/null;
@@ -75,7 +75,10 @@ if (!Array.isArray(manifest.call_sites)) die('manifest.call_sites must be an arr
 // Structural validation — warnings only, so a draft can still be previewed.
 const warnings = [];
 const ids = new Set();
+// Conventional semantics: `grade` / request_grade describe the REQUEST payload.
+// `response_grade` describes the RESPONSE; a null response defaults to unresolved.
 const counts = { recorded: 0, serialized: 0, reconstructed: 0, representative: 0, unresolved: 0 };
+const resCounts = { recorded: 0, serialized: 0, reconstructed: 0, representative: 0, unresolved: 0 };
 for (const cs of manifest.call_sites) {
   if (!cs.id) warnings.push(`call site without id: ${JSON.stringify(cs.name ?? '?')}`);
   else if (ids.has(cs.id)) warnings.push(`duplicate call-site id: ${cs.id}`);
@@ -85,20 +88,27 @@ for (const cs of manifest.call_sites) {
     continue;
   }
   for (const r of cs.requests) {
-    const grade = r.grade ?? (r.request_grade && r.response_grade ? weaker(r.request_grade, r.response_grade) : undefined);
-    if (!grade) warnings.push(`${cs.id}/${r.id ?? '?'}: missing grade`);
-    else if (!GRADES.has(grade)) warnings.push(`${cs.id}/${r.id ?? '?'}: unknown grade "${grade}"`);
-    else counts[grade]++;
-    if (grade && grade !== 'unresolved' && !r.provenance) warnings.push(`${cs.id}/${r.id ?? '?'}: missing provenance`);
-    if (grade !== 'unresolved' && r.request == null && r.response == null) {
+    const reqGrade = r.request_grade ?? r.grade;
+    if (!reqGrade) warnings.push(`${cs.id}/${r.id ?? '?'}: missing request grade`);
+    else if (!GRADES.has(reqGrade)) warnings.push(`${cs.id}/${r.id ?? '?'}: unknown request grade "${reqGrade}"`);
+    else counts[reqGrade]++;
+
+    let resGrade = r.response_grade;
+    if (!resGrade) {
+      if (r.response == null) resGrade = 'unresolved';
+      else {
+        resGrade = reqGrade;
+        warnings.push(`${cs.id}/${r.id ?? '?'}: response present without response_grade (assuming "${resGrade}")`);
+      }
+    }
+    if (!GRADES.has(resGrade)) warnings.push(`${cs.id}/${r.id ?? '?'}: unknown response grade "${resGrade}"`);
+    else resCounts[resGrade]++;
+
+    if (reqGrade && reqGrade !== 'unresolved' && !r.provenance) warnings.push(`${cs.id}/${r.id ?? '?'}: missing provenance`);
+    if ((reqGrade !== 'unresolved' || resGrade !== 'unresolved') && r.request == null && r.response == null) {
       warnings.push(`${cs.id}/${r.id ?? '?'}: no request or response payload`);
     }
   }
-}
-
-function weaker(a, b) {
-  const order = ['recorded', 'serialized', 'reconstructed', 'representative', 'unresolved'];
-  return order.indexOf(b) > order.indexOf(a) ? b : a;
 }
 
 function checkScriptSyntax(html, label) {
@@ -138,14 +148,24 @@ fs.writeFileSync(args.out, html);
 const total = Object.values(counts).reduce((a, b) => a + b, 0);
 console.log(`render: wrote ${args.out}`);
 console.log(`        ${manifest.call_sites.length} call site(s), ${total} payload(s)`);
-console.log(
-  `        evidence: recorded ${counts.recorded} · serialized ${counts.serialized} · reconstructed ${counts.reconstructed} · representative ${counts.representative} · unresolved ${counts.unresolved}`,
-);
+console.log(`        requests:  ${fmtCounts(counts)}`);
+console.log(`        responses: ${fmtCounts(resCounts)}`);
+function fmtCounts(c) {
+  return Object.keys(c).map((k) => `${c[k]} ${k}`).join(' · ');
+}
 if (manifest.summary?.evidence) {
   const declared = manifest.summary.evidence;
   for (const k of Object.keys(counts)) {
     if (typeof declared[k] === 'number' && declared[k] !== counts[k]) {
-      warnings.push(`summary.evidence.${k} is ${declared[k]} but the payloads count ${counts[k]}`);
+      warnings.push(`summary.evidence.${k} is ${declared[k]} but the request payloads count ${counts[k]}`);
+    }
+  }
+}
+if (manifest.summary?.response_evidence) {
+  const declared = manifest.summary.response_evidence;
+  for (const k of Object.keys(resCounts)) {
+    if (typeof declared[k] === 'number' && declared[k] !== resCounts[k]) {
+      warnings.push(`summary.response_evidence.${k} is ${declared[k]} but the responses count ${resCounts[k]}`);
     }
   }
 }

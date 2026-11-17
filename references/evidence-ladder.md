@@ -76,7 +76,7 @@ Common reasons: dynamic input with no recorded example; requires live provider c
 
 ## Borderline cases
 
-- **Request vs response fidelity** — grade separately (`request_grade`, `response_grade`); `grade` is the weaker of the two. A `serialized` request with no response is normal.
+- **Request vs response fidelity** — grade separately: `grade`/`request_grade` is the **request** evidence, `response_grade` is the **response** evidence; a null response is `unresolved`. A `serialized` request with an `unresolved` response is normal and must not be rolled up as if the response were captured.
 - **Streaming** — capture the SSE chunk sequence verbatim in `captures/`; the assembled text is a derived view. Grade the capture, note that the response is streamed, and keep chunk boundaries.
 - **Multi-request interactions** (tool loops, retries, fallbacks) — one entry per wire request in `requests[]`, in order, with `turn`/`attempt` metadata. Do not collapse to the final request only.
 - **LangChain / Vercel AI SDK / similar** — the framework may transform messages after your app code. Capture at the deepest point you can reach; if you only see pre-framework messages, grade `reconstructed` and say so.

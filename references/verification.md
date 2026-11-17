@@ -11,8 +11,9 @@ Do not report the map as complete until every item passes. Run the checks, paste
 - [ ] Non-chat calls (embeddings, moderation, transcription, images) are listed.
 - [ ] Agent loops / multi-request interactions are captured as sequences.
 - [ ] `manifest.summary.call_sites` equals `call_sites.length`.
+- [ ] Every discovery candidate is either a call site or in `dismissed[]` with a category and a reason. Silence is a failed map.
 
-**Command:** `rg -n --glob '!node_modules' --glob '!.llmmap' -e 'gpt-|claude-|gemini-|openai|anthropic|@ai-sdk|langchain|llamaindex' <repo>` — every hit must be in the manifest or in the dismissed list.
+**Command:** `rg -n --hidden --glob '!**/node_modules/**' --glob '!**/.llmmap/**' --glob '!**/*.md' --glob '!**/*.lock' -e 'gpt-|claude-|gemini-|openai|anthropic|@ai-sdk|langchain|llamaindex' <repo>` — every **code** hit must be in the manifest or in `dismissed[]`. Docs/plans are not runtime code; do not chase markdown hits.
 
 ## 2. Evidence integrity
 
@@ -43,14 +44,14 @@ process.exit(bad ? 1 : 0);'
 
 ## 3. Secrets and PII
 
-- [ ] Redaction pass ran on every capture and inline payload.
+- [ ] Redaction pass ran on every capture and inline payload. `redact.py` scans payload files only (`.json/.jsonl/.ndjson/.txt/.log/.http/.sse`); source and docs are skipped by design — pass a specific file explicitly if you need it checked.
 - [ ] Re-scan found no matches:
 
 ```bash
 rg -n -i --hidden --glob '!.git' -e 'sk-[a-zA-Z0-9]{10,}' -e 'sk-ant-' -e 'AIza[0-9A-Za-z_-]{10,}' -e 'ghp_[0-9A-Za-z]{10,}' -e 'Bearer [A-Za-z0-9._-]{12,}' -e 'AKIA[0-9A-Z]{12,}' -e '(postgres|redis|mongodb(\+srv)?)://[^ "\x27]+:[^ "\x27]+' .llmmap || echo "clean"
 ```
 
-- [ ] For every key name in `.env*` files, its value does not appear in `.llmmap/`.
+- [ ] For every **secret-looking** key in `.env*` files (name matching `(^|_)(KEY|TOKEN|SECRET|PASSWORD|DSN|CREDENTIALS)$`, case-insensitive), its value does not appear in `.llmmap/`. Ignore benign config like `NODE_ENV` or model ids.
 - [ ] If payloads contain user data, the manifest/README warns before committing `captures/`.
 - [ ] No full secret in provenance commands, README, or the viewer.
 
@@ -67,9 +68,14 @@ rg -n -i --hidden --glob '!.git' -e 'sk-[a-zA-Z0-9]{10,}' -e 'sk-ant-' -e 'AIza[
 - [ ] HTML-escape check: a payload containing `<script>alert(1)</script>` renders as text.
 
 ```bash
-google-chrome --headless=new --disable-gpu --no-sandbox --dump-dom \
-  "file://$PWD/.llmmap/report.html" | head -5
-grep -nE 'https?://' .llmmap/report.html | grep -vE '//\s*$' | head
+# console errors (a JS syntax error renders a blank page with exit 0 on --dump-dom alone)
+google-chrome --headless=new --disable-gpu --no-sandbox --virtual-time-budget=3000 \
+  --enable-logging=stderr --v=0 --dump-dom "file://$PWD/.llmmap/report.html" \
+  2>&1 >/tmp/report-dom.html | grep -iE 'CONSOLE|Uncaught|SyntaxError' && echo "FAIL: console errors" || echo "no console errors"
+grep -q 'class="site-btn"' /tmp/report-dom.html && echo "rendered: YES" || echo "FAIL: empty #root"
+
+# external requests: only network-bearing attributes matter; payload URLs are legitimate data
+grep -nE '<(script|img|link|iframe)[^>]+(src|href)="https?://|fetch\(' .llmmap/report.html | head
 ```
 
 ## 5. Paths and reproducibility

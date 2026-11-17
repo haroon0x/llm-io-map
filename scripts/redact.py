@@ -49,7 +49,9 @@ VALUE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 ]
 
 # Keys whose *name* is not sensitive but whose value may hold env-var style secrets.
-TEXT_EXTS = {".json", ".jsonl", ".txt", ".md", ".log", ".http", ".sse", ".ndjson"}
+# Payload-like files only. Source code and docs are skipped in directory scans:
+# they contain identifiers like `api_key = os.getenv(...)`, not secret values.
+DATA_EXTS = {".json", ".jsonl", ".ndjson", ".txt", ".log", ".http", ".sse"}
 SKIP_DIR_NAMES = {".git", "node_modules"}
 
 
@@ -94,8 +96,14 @@ def redact_text(text: str, path: str, hits: list[tuple[str, str]]) -> str:
     if TEXT_KEY_PATTERN.search(text):
         def _key_repl(m: "re.Match[str]") -> str:
             value = m.group(2).strip()
-            if REDACTED_RE.match(value.strip('"\'')):
+            inner = value.strip('"\'')
+            if REDACTED_RE.match(inner):
                 return m.group(0)   # already redacted; stay idempotent
+            # Not a secret value: env-var references, code expressions, type annotations.
+            if re.fullmatch(r"[A-Z][A-Z0-9_]{2,}", inner):
+                return m.group(0)
+            if re.search(r"(getenv|process\.env|os\.environ|import |require\(|=>|\([^)]*\)|\b(string|number|boolean|unknown|any|str|int|bool)\b)", value):
+                return m.group(0)
             hits.append((path, "secret-key"))
             return m.group(1) + redact_value("secret", "")
         text = TEXT_KEY_PATTERN.sub(_key_repl, text)
@@ -126,7 +134,7 @@ def main() -> int:
             continue
         if path.is_dir():
             for f in sorted(path.rglob("*")):
-                if f.is_file() and f.suffix.lower() in TEXT_EXTS and not (set(f.parts) & SKIP_DIR_NAMES):
+                if f.is_file() and f.suffix.lower() in DATA_EXTS and not (set(f.parts) & SKIP_DIR_NAMES):
                     targets.append(f)
         else:
             targets.append(path)
@@ -161,7 +169,10 @@ def main() -> int:
             else:
                 data = walk_json(data, "", hits)
                 data = walk_json_keys(data, "", hits)
-                new_text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+                # Preserve the original layout: one-line captures stay one-line.
+                compact = "\n" not in original.strip()
+                trailing = "\n" if original.endswith("\n") else ""
+                new_text = json.dumps(data, ensure_ascii=False, indent=None if compact else 2) + trailing
 
         if hits:
             changed_files += 1

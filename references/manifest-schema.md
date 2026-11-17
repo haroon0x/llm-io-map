@@ -27,12 +27,14 @@
   "summary": {
     "call_sites": 3,
     "evidence": { "recorded": 1, "serialized": 1, "reconstructed": 0, "representative": 1, "unresolved": 0 },
+    "response_evidence": { "recorded": 1, "serialized": 0, "reconstructed": 0, "representative": 0, "unresolved": 2 },
     "providers": ["openai"],
     "models": ["gpt-5-mini", "text-embedding-3-small"],
     "trigger_kinds": { "http": 2, "job": 1 }
   },
   "entrypoints": [ /* see below */ ],
   "call_sites": [ /* see below */ ],
+  "dismissed": [ /* see below */ ],
   "flow": { /* see below */ },
   "redaction": {
     "rules": ["authorization -> <REDACTED:bearer>", "api_key -> <REDACTED:api_key>"],
@@ -111,7 +113,8 @@ An entrypoint is what makes the LLM fire. One per trigger (route, job, CLI, even
   "requests": [
     {
       "id": "req-001",
-      "grade": "serialized",
+      "grade": "serialized",              /* request grade */
+      "response_grade": "unresolved",     /* response grade; null response => unresolved */
       "provenance": { "type": "harness", "command": "node .llmmap/extract/harness-cs-001.mjs" },
       "request_file": "captures/cs-001/req-001.request.json",
       "response_file": null,
@@ -137,8 +140,9 @@ Rules:
 - `location` is the LLM call itself; `call_chain` is the path to it, ordered entrypoint → call.
 - `dynamic_inputs` must cover every placeholder that changes per request; that's what makes `reconstructed` honest.
 - `requests` is a list because one call site often produces many wire requests (agent loops, retries, streaming chunks). Record the sequence.
-- `grade` belongs to the payload pair. If request and response differ in fidelity, use `request_grade` / `response_grade` and set `grade` to the weaker one.
+- **Grade semantics:** `grade` (alias `request_grade`) describes the **request** payload; `response_grade` describes the **response**. A `null`/absent response with no evidence is `unresolved`. Never use the request grade to imply what the response is. `summary.evidence` is the request rollup; `summary.response_evidence` is the response rollup (both optional but recommended — the renderer warns when they disagree).
 - `input_context` states the concrete input a `reconstructed` payload represents. Required for `reconstructed`.
+- `provenance` carries the source (fixture path / harness command) and flags — **not timestamps**. Timestamps live in `captures/*.meta.json` only, so refreshes stay diff-stable.
 - `provenance.command` must actually work; the verifier runs it.
 
 ## Flow
@@ -153,6 +157,23 @@ A compact, human-readable graph. The viewer draws it; keep it simple.
   ]
 }
 ```
+
+## Dismissed
+
+Every candidate the discovery pass considered and ruled out gets an explicit entry. This is how "no silent omissions" is enforced: anything not in `call_sites` must be here with a reason.
+
+```jsonc
+"dismissed": [
+  {
+    "id": "search:tinyfish",
+    "path": "src/search/tinyfish.ts:41",
+    "category": "retrieval-only",            // retrieval-only | external-agent-artifact | non-llm | dead-code | third-party
+    "reason": "Search API returns ranked results; it never invokes a model."
+  }
+]
+```
+
+Categories worth using: `retrieval-only` (search/rerank without generation), `external-agent-artifact` (prompt shipped for other agents/humans, never sent by this repo), `non-llm` (name suggests LLM but no model call), `dead-code` (unreachable), `third-party` (inside a dependency).
 
 ## Unresolved
 

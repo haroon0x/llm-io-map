@@ -424,8 +424,10 @@ function renderHeader(){
   const payloads = (MANIFEST.call_sites||[]).reduce((n,cs)=> n + ((cs.requests||[]).length), 0);
   const providers = sum.providers || [...new Set((MANIFEST.call_sites||[]).map(c=>c.provider).filter(Boolean))];
   const models = sum.models || [...new Set((MANIFEST.call_sites||[]).map(c=>c.model).filter(Boolean))];
+  const rev = sum.response_evidence || null;
   const evidencePills = GRADE_ORDER.filter(g => (ev[g]||0) > 0).map(g =>
-    el("span", {class:"pill", title:g}, el("span", {class:"dot", style:"background:var(--g-"+g+")"}), el("b", null, String(ev[g])), g));
+    el("span", {class:"pill", title:"request payloads: " + g}, el("span", {class:"dot", style:"background:var(--g-"+g+")"}), el("b", null, String(ev[g])), g));
+  const unresolvedResponses = rev ? (rev.unresolved || 0) : null;
   return el("header", {class:"top"},
     el("div", {class:"brand"},
       el("div", {class:"brand-mark"}),
@@ -438,6 +440,8 @@ function renderHeader(){
       el("span", {class:"pill"}, el("b", null, String(sites)), sites === 1 ? "call site" : "call sites"),
       el("span", {class:"pill"}, el("b", null, String(payloads)), payloads === 1 ? "payload" : "payloads"),
       ...evidencePills,
+      (unresolvedResponses > 0) ? el("span", {class:"pill", title:"responses with no captured output"},
+        el("span", {class:"dot", style:"background:var(--g-unresolved)"}), el("b", null, String(unresolvedResponses)), "unresolved responses") : null,
       providers.length ? el("span", {class:"pill"}, providers.join(" · ")) : null,
       models.length ? el("span", {class:"pill", title:"models"}, models.slice(0,3).join(" · ") + (models.length>3 ? " +"+(models.length-3) : "")) : null,
       el("span", {class:"pill", title:"generated"}, (MANIFEST.generated_at||"").replace("T"," ").slice(0,16))
@@ -760,11 +764,18 @@ function renderReportOverview(){
     repo.commit ? "commit " + repo.commit.slice(0,8) : null,
   ].filter(Boolean).map((x,i) => frag(i? el("span", {class:"sep"}, "·") : null, el("span", null, x)))));
 
-  const evCards = GRADE_ORDER.map(g => el("div", {class:"pill", title:g},
+  const rev = sum.response_evidence || null;
+  const evCards = GRADE_ORDER.map(g => el("div", {class:"pill", title:"requests: "+g},
     el("span", {class:"dot", style:"background:var(--g-"+g+")"}), el("b", null, String(ev[g]||0)), g));
+  const resCards = rev ? GRADE_ORDER.map(g => el("div", {class:"pill", title:"responses: "+g},
+    el("span", {class:"dot", style:"background:var(--g-"+g+")"}), el("b", null, String(rev[g]||0)), g)) : null;
   page.appendChild(el("div", {class:"card"}, el("div", {class:"card-h"}, el("span", {class:"t"}, "Evidence breakdown"),
-    el("span", {class:"hint"}, "payloads graded by how they were obtained")),
-    el("div", {class:"card-b"}, el("div", {class:"chips"}, evCards))));
+    el("span", {class:"hint"}, "graded by how each payload was obtained")),
+    el("div", {class:"card-b"},
+      el("div", {class:"group-label", style:"padding:0 0 6px"}, "Requests"),
+      el("div", {class:"chips"}, evCards),
+      resCards ? frag(el("div", {class:"group-label", style:"padding:14px 0 6px"}, "Responses"),
+        el("div", {class:"chips"}, resCards)) : null)));
 
   if (eps.length){
     page.appendChild(card("Entrypoints", pural(eps.length, "trigger", "triggers"), tableBlock(
@@ -793,6 +804,11 @@ function renderReportOverview(){
     ["Frameworks", (profile.frameworks||[]).join(", ")],
     ["Runnable here", profile.runnable === true ? "yes" : profile.runnable === false ? "no" : undefined],
   ].filter(r => r[1]);
+  if (Array.isArray(MANIFEST.dismissed) && MANIFEST.dismissed.length){
+    page.appendChild(card("Dismissed surfaces", pural(MANIFEST.dismissed.length, "candidate", "candidates") + " checked and ruled out",
+      tableBlock(["Path / id","Category","Reason"],
+        MANIFEST.dismissed.map(d => [el("span", {class:"mono"}, d.path || d.id || "—"), d.category || "—", d.reason || "—"]))));
+  }
   if (prof.length) page.appendChild(card("Repo profile", null, defList(prof)));
   if (profile.evidence_sources && profile.evidence_sources.length){
     page.appendChild(card("Evidence sources found", profile.evidence_sources.length, tableBlock(

@@ -46,6 +46,7 @@ Search imports, constructors, and client factories. Per language, check the idio
 - `ChatOpenAI`, `ChatAnthropic`, `LLM(`, `ChatPromptTemplate`, `.invoke(`, `.predict(`
 - `litellm.completion(`, `completion(`, `@llm`, `instructor.from_openai(`
 - `boto3.client("bedrock-runtime")`, `invoke_model(`, `converse(`
+- **Raw HTTP clients (no SDK)**: `httpx.AsyncClient` / `httpx.Client`, `requests.get/post`, `aiohttp.ClientSession`, `urllib.request`, `http.client` — then check the constructed URL/`base_url` and payload for provider paths (`/v1/responses`, `/v1/chat/completions`, `/v1/messages`, `/v1/embeddings`) or a config-supplied base URL. This is a common blind spot: no SDK import, but an LLM call via raw HTTP.
 
 **Go**
 - `openai.NewClient`, `anthropic.NewClient`, `genai.NewClient`, `bedrockruntime`, `InvokeModel`, `Converse`
@@ -74,6 +75,7 @@ Prompts are the thing most likely to be missed:
 - Prompts in DB/config/admin panels, feature-flag payloads, CMS, localisation files
 - Few-shot examples and tool/function descriptions — they shape the request and belong in the prompt catalog
 - Prompt injection defenses, output parsers, and guardrails that modify the payload after the app code
+- **LLM-facing artifacts that are not call sites**: prompt text shipped in docs/marketing for external agents or humans to copy, or rendered in a UI. These are **not** call sites — record them in `dismissed[]` with category `external-agent-artifact` and the reason ("repo never sends it to a model") so the next reader is not misled.
 
 ## Pass E — Indirect and dynamic
 
@@ -82,7 +84,7 @@ Prompts are the thing most likely to be missed:
 - **Base URL indirection**: `OPENAI_BASE_URL`, proxy/gateway env vars. A gateway means the *gateway* config (routing, fallbacks) is part of the map.
 - **Dynamic clients**: DI containers, `getClient()`, module singletons, lazy initialization.
 - **Agent graphs/state machines**: LangGraph nodes, workflow definitions, planner/executor loops — each LLM invocation node is a call site; tool loops produce multi-request sequences.
-- **MCP / tool servers**: server tool definitions become LLM input; client-side tool calls return results to the model. Map the tool surface and where tools are exposed.
+- **MCP / tool servers**: in a *client* repo, map where MCP tools are exposed to the model. In a repo that **is** a server (tool definitions, no in-repo model invocation), the tool surface is a consumer-facing API, not a call site — record it in `dismissed[]` with category `non-llm` and say why.
 - **Non-chat**: embeddings (RAG indexing + query), rerankers, moderation, transcription, image/audio generation, batch jobs, evals/fine-tune scripts. They are LLM I/O; include them but keep the chat/other split clear.
 - **Build-time / offline**: scripts that call models to generate fixtures or code — include if they run in the repo, mark as non-runtime.
 
