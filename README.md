@@ -65,6 +65,8 @@ The agent will:
 
 Browse [`examples/report.example.html`](examples/report.example.html) for a rendered sample (open locally in a browser), and [`assets/manifest.example.json`](assets/manifest.example.json) for the data contract.
 
+Two views, one offline file: the [report overview](examples/screenshot-overview.png) (evidence breakdown, entrypoints, call sites) and a call site's [raw I/O](examples/screenshot.png) with per-payload grades, provenance, and reproduce commands.
+
 ## What it refuses to do
 
 - Invent payloads to fill gaps.
