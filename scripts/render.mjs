@@ -101,12 +101,25 @@ function weaker(a, b) {
   return order.indexOf(b) > order.indexOf(a) ? b : a;
 }
 
+function checkScriptSyntax(html, label) {
+  const scripts = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]);
+  if (!scripts.length) die(`${label} contains no <script> block — wrong template?`);
+  for (const src of scripts) {
+    try {
+      new Function(src); // compile only; never executes
+    } catch (err) {
+      die(`${label} has a JavaScript syntax error: ${err.message}\nThe report would render a blank page. Fix the template before shipping.`);
+    }
+  }
+}
+
 let template;
 try {
   template = fs.readFileSync(args.template, 'utf8');
 } catch (err) {
   die(`cannot read template: ${err.message}`);
 }
+checkScriptSyntax(template, args.template);
 
 const occurrences = template.split(MARKER).length - 1;
 if (occurrences !== 1) die(`template must contain the marker exactly once, found ${occurrences}`);
@@ -117,6 +130,7 @@ const safeJson = JSON.stringify(manifest)
   .replace(/\u2029/g, '\\u2029');
 
 const html = template.replace(MARKER, `/*__LLMMAP_MANIFEST__*/${safeJson}`);
+checkScriptSyntax(html, args.template + ' (with manifest embedded)');
 
 fs.mkdirSync(path.dirname(path.resolve(args.out)), { recursive: true });
 fs.writeFileSync(args.out, html);

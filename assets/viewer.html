@@ -253,7 +253,8 @@ function highlightJson(value){
     const tok = m[0];
     if (m[1] !== undefined){
       const cls = m[2] ? "tok-key" : "tok-str";
-      out += '<span class="'+cls+'">'+escapeHtml(tok)+'</span>' + (m[2] ? '<span class="tok-pun">'+escapeHtml(m[2])+'</span>' : "");
+      out += '<span class="'+cls+'">'+escapeHtml(m[1])+'</span>';
+      if (m[2]) out += '<span class="tok-pun">'+escapeHtml(m[2])+'</span>';
     } else if (tok === "true" || tok === "false" || tok === "null"){
       out += '<span class="tok-lit">'+tok+'</span>';
     } else {

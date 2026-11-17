@@ -29,6 +29,13 @@ SECRET_KEY = re.compile(
 )
 
 REDACTED_RE = re.compile(r"^<REDACTED:[a-z_]+>$")
+# In free text / non-JSON lines (JSONL fallback, .log, .sse): key-ish assignments.
+TEXT_KEY_PATTERN = re.compile(
+    r"(?i)(\"?(?:authorization|proxy-authorization|x-api-key|api[_-]?key|apikey|access[_-]?token|"
+    r"refresh[_-]?token|id[_-]?token|token|secret|client[_-]?secret|password|passwd|pwd|cookie|"
+    r"set[_-]?cookie|session[_-]?id|private[_-]?key|openai[_-]?api[_-]?key|anthropic[_-]?api[_-]?key)\"?\s*[:=]\s*)"
+    r"(\"[^\"]*\"|'[^']*'|(?:Basic|Bearer|Token|Bot)\s+[^\s,}\]\n]+|[^\s,}\]\n]+)"
+)
 
 VALUE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("openai_key", re.compile(r"\bsk-(?:proj-|ant-)?[A-Za-z0-9_\-]{16,}")),
@@ -66,14 +73,14 @@ def walk_json(obj, path: str, hits: list[tuple[str, str]]):
 
 
 def walk_json_keys(obj, path: str, hits: list[tuple[str, str]]):
-    """Second pass: redact values under sensitive key names, whatever they contain."""
+    """Second pass: redact values under sensitive key names, whatever the value type."""
     if isinstance(obj, dict):
         out = {}
         for k, v in obj.items():
             child = f"{path}.{k}" if path else k
             already = isinstance(v, str) and REDACTED_RE.match(v)
-            if SECRET_KEY.match(k) and isinstance(v, (str, int, float)) and v != "" and not already:
-                out[k] = redact_value("secret", "")
+            if SECRET_KEY.match(k) and v not in (None, "", [], {}) and not already:
+                out[k] = redact_value("secret", "")   # redact the whole subtree, not just strings
                 hits.append((child, "secret-key"))
             else:
                 out[k] = walk_json_keys(v, child, hits)
@@ -84,6 +91,14 @@ def walk_json_keys(obj, path: str, hits: list[tuple[str, str]]):
 
 
 def redact_text(text: str, path: str, hits: list[tuple[str, str]]) -> str:
+    if TEXT_KEY_PATTERN.search(text):
+        def _key_repl(m: "re.Match[str]") -> str:
+            value = m.group(2).strip()
+            if REDACTED_RE.match(value.strip('"\'')):
+                return m.group(0)   # already redacted; stay idempotent
+            hits.append((path, "secret-key"))
+            return m.group(1) + redact_value("secret", "")
+        text = TEXT_KEY_PATTERN.sub(_key_repl, text)
     for kind, pat in VALUE_PATTERNS:
         if pat.search(text):
             text = pat.sub(redact_value(kind, ""), text)
@@ -121,14 +136,32 @@ def main() -> int:
     for f in targets:
         original = f.read_text(encoding="utf-8", errors="replace")
         hits: list[tuple[str, str]] = []
-        try:
-            data = json.loads(original)
-        except json.JSONDecodeError:
-            new_text = redact_text(original, "<text>", hits)
+        if f.suffix.lower() in {".jsonl", ".ndjson"}:
+            # JSON Lines: redact per record so key-name rules still apply.
+            lines_out = []
+            for i, line in enumerate(original.splitlines()):
+                if not line.strip():
+                    lines_out.append(line)
+                    continue
+                where = f"line {i+1}"
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    lines_out.append(redact_text(line, where, hits))
+                else:
+                    row = walk_json(row, where, hits)
+                    row = walk_json_keys(row, where, hits)
+                    lines_out.append(json.dumps(row, ensure_ascii=False))
+            new_text = "\n".join(lines_out) + ("\n" if original.endswith("\n") else "")
         else:
-            data = walk_json(data, "", hits)
-            data = walk_json_keys(data, "", hits)
-            new_text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+            try:
+                data = json.loads(original)
+            except json.JSONDecodeError:
+                new_text = redact_text(original, "<text>", hits)
+            else:
+                data = walk_json(data, "", hits)
+                data = walk_json_keys(data, "", hits)
+                new_text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
 
         if hits:
             changed_files += 1
