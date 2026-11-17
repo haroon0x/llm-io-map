@@ -1,0 +1,286 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-11-17T15:30:00+05:30",
+  "repo": {
+    "name": "acme-support",
+    "root": ".",
+    "commit": "3f2a1c9",
+    "branch": "main"
+  },
+  "profile": {
+    "languages": ["typescript"],
+    "package_managers": ["pnpm"],
+    "frameworks": ["next", "vercel-ai-sdk", "@anthropic-ai/sdk"],
+    "runnable": true,
+    "evidence_sources": [
+      { "type": "fixture", "path": "tests/fixtures/anthropic/*.json", "count": 4 },
+      { "type": "eval-dataset", "path": "evals/support-qa.jsonl", "count": 120 }
+    ]
+  },
+  "summary": {
+    "call_sites": 3,
+    "evidence": { "recorded": 1, "serialized": 1, "reconstructed": 0, "representative": 1, "unresolved": 0 },
+    "providers": ["openai", "anthropic"],
+    "models": ["gpt-5-mini", "claude-sonnet-4-5", "text-embedding-3-small"],
+    "trigger_kinds": { "http": 2, "job": 1 }
+  },
+  "entrypoints": [
+    {
+      "id": "route:POST /api/chat",
+      "type": "http",
+      "file": "app/api/chat/route.ts",
+      "line": 12,
+      "trigger": "POST request; streams the response",
+      "auth": "session cookie required",
+      "gating": "only when message is non-empty and the rate limit passes",
+      "call_sites": ["cs-001"]
+    },
+    {
+      "id": "job:nightly-digest",
+      "type": "cron",
+      "file": "jobs/digest.ts",
+      "line": 8,
+      "trigger": "cron 0 2 * * *",
+      "auth": "internal scheduler",
+      "gating": "only when there are conversations in the last 24h",
+      "call_sites": ["cs-002"]
+    },
+    {
+      "id": "route:POST /api/search",
+      "type": "http",
+      "file": "app/api/search/route.ts",
+      "line": 6,
+      "trigger": "POST request",
+      "auth": "public",
+      "gating": "query length >= 3",
+      "call_sites": ["cs-003"]
+    }
+  ],
+  "call_sites": [
+    {
+      "id": "cs-001",
+      "name": "support chat completion",
+      "provider": "openai",
+      "sdk": "ai@5",
+      "method": "streamText",
+      "model": "gpt-5-mini",
+      "model_resolution": { "source": "env:OPENAI_MODEL", "default": "gpt-5-mini", "file": "lib/llm.ts", "line": 8 },
+      "location": { "file": "lib/llm.ts", "line": 42, "end_line": 58 },
+      "call_chain": [
+        { "file": "app/api/chat/route.ts", "line": 12, "name": "POST" },
+        { "file": "lib/agent.ts", "line": 30, "name": "runAgent" },
+        { "file": "lib/llm.ts", "line": 42, "name": "complete" }
+      ],
+      "trigger": { "kind": "http", "detail": "POST /api/chat", "entrypoint_id": "route:POST /api/chat" },
+      "gating": "message.length > 0 && rateLimit.ok",
+      "system_prompt": {
+        "text": "You are the Acme support agent. Answer only from the provided help-center context. If the context does not contain the answer, say you do not know and offer to open a ticket.",
+        "source": { "type": "file", "path": "prompts/system.md", "line": 1 },
+        "dynamic_parts": ["{retrieved_docs}"]
+      },
+      "messages": {
+        "template": [
+          { "role": "system", "content": "$system_prompt" },
+          { "role": "user", "content": "{question}\n\nContext:\n{retrieved_docs}" }
+        ],
+        "assembly": { "file": "lib/prompt.ts", "line": 20, "note": "top-5 docs from vector search" },
+        "dynamic_inputs": [
+          { "placeholder": "{question}", "origin": "request body .message" },
+          { "placeholder": "{retrieved_docs}", "origin": "vector store top-5 (RAG)" }
+        ]
+      },
+      "tools": [
+        {
+          "name": "search_docs",
+          "description": "Search the Acme help center.",
+          "params_schema_file": "lib/tools.ts",
+          "params_schema_line": 10
+        }
+      ],
+      "params": { "temperature": 0.2, "max_tokens": 800, "stream": true, "response_format": null, "retries": 2, "fallback_models": [] },
+      "requests": [
+        {
+          "id": "req-001",
+          "grade": "serialized",
+          "provenance": { "type": "harness", "command": "node .llmmap/extract/harness-cs-001.mjs" },
+          "request_file": "captures/cs-001/req-001.request.json",
+          "response_file": null,
+          "input_context": "user message: 'How do refunds work?'",
+          "redactions": ["authorization"],
+          "reproduce": "node .llmmap/extract/harness-cs-001.mjs",
+          "note": "streamed; response was not captured",
+          "request": {
+            "model": "gpt-5-mini",
+            "messages": [
+              {
+                "role": "system",
+                "content": "You are the Acme support agent. Answer only from the provided help-center context. If the context does not contain the answer, say you do not know and offer to open a ticket."
+              },
+              {
+                "role": "user",
+                "content": "How do refunds work?\n\nContext:\n# Refunds\nRefunds are available within 30 days of purchase. Open Settings > Billing > Request refund. Refunds post to the original payment method in 5-10 business days."
+              }
+            ],
+            "temperature": 0.2,
+            "max_tokens": 800,
+            "stream": true,
+            "tools": [
+              {
+                "type": "function",
+                "function": {
+                  "name": "search_docs",
+                  "description": "Search the Acme help center.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": { "query": { "type": "string", "description": "Search query" } },
+                    "required": ["query"]
+                  }
+                }
+              }
+            ]
+          },
+          "response": null
+        }
+      ],
+      "notes": "System prompt lives in prompts/system.md and is loaded once at module init."
+    },
+    {
+      "id": "cs-002",
+      "name": "nightly conversation digest",
+      "provider": "anthropic",
+      "sdk": "@anthropic-ai/sdk@0.68",
+      "method": "messages.create",
+      "model": "claude-sonnet-4-5",
+      "model_resolution": { "source": "constant", "default": "claude-sonnet-4-5", "file": "jobs/digest.ts", "line": 5 },
+      "location": { "file": "jobs/digest.ts", "line": 44, "end_line": 62 },
+      "call_chain": [
+        { "file": "jobs/digest.ts", "line": 8, "name": "runDigest" },
+        { "file": "lib/digest.ts", "line": 17, "name": "summarizeConversations" },
+        { "file": "jobs/digest.ts", "line": 44, "name": "messages.create" }
+      ],
+      "trigger": { "kind": "job", "detail": "cron 0 2 * * *", "entrypoint_id": "job:nightly-digest" },
+      "gating": "only when there are conversations in the last 24h",
+      "system_prompt": {
+        "text": "Summarize the day's support conversations in three bullet points. Do not include customer names or emails.",
+        "source": { "type": "inline", "path": "jobs/digest.ts", "line": 30 },
+        "dynamic_parts": []
+      },
+      "messages": {
+        "template": [
+          { "role": "system", "content": "$system_prompt" },
+          { "role": "user", "content": "Conversations:\n{conversation_transcript}" }
+        ],
+        "assembly": { "file": "lib/digest.ts", "line": 24, "note": "last 24h of threads, PII stripped upstream" },
+        "dynamic_inputs": [{ "placeholder": "{conversation_transcript}", "origin": "database: conversations table, last 24h" }]
+      },
+      "tools": [],
+      "params": { "temperature": 0, "max_tokens": 1500, "stream": false, "response_format": null, "retries": 1, "fallback_models": [] },
+      "requests": [
+        {
+          "id": "req-001",
+          "grade": "recorded",
+          "provenance": { "type": "fixture", "path": "tests/fixtures/anthropic/digest-2026-11-16.json" },
+          "request_file": "captures/cs-002/req-001.request.json",
+          "response_file": "captures/cs-002/req-001.response.json",
+          "input_context": "recorded fixture for the 2026-11-16 digest run",
+          "redactions": [],
+          "reproduce": "pnpm vitest run tests/digest.test.ts -t 'summarizes conversations'",
+          "note": "captured from the fixture used by the digest test",
+          "request": {
+            "model": "claude-sonnet-4-5",
+            "max_tokens": 1500,
+            "temperature": 0,
+            "system": "Summarize the day's support conversations in three bullet points. Do not include customer names or emails.",
+            "messages": [
+              {
+                "role": "user",
+                "content": "Conversations:\n1. User asked how to update their payment method. Agent sent the billing settings link. Resolved.\n2. User reported a login loop after a password reset. Agent escalated to engineering. Open.\n3. User asked whether annual plans are refundable. Agent explained the 30-day refund policy. Resolved."
+              }
+            ]
+          },
+          "response": {
+            "id": "msg_01XFDUDYJgAACzvnptvVoYEL",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-sonnet-4-5",
+            "content": [
+              {
+                "type": "text",
+                "text": "- One billing-settings question resolved via a link to payment settings.\n- One login loop after password reset escalated to engineering; still open.\n- One refund-policy question resolved by explaining the 30-day window."
+              }
+            ],
+            "stop_reason": "end_turn",
+            "stop_sequence": null,
+            "usage": { "input_tokens": 210, "output_tokens": 61 }
+          }
+        }
+      ],
+      "notes": "PII is stripped before the transcript reaches the model; verify in lib/digest.ts:24."
+    },
+    {
+      "id": "cs-003",
+      "name": "help-center embedding",
+      "provider": "openai",
+      "sdk": "ai@5",
+      "method": "embed",
+      "model": "text-embedding-3-small",
+      "model_resolution": { "source": "constant", "default": "text-embedding-3-small", "file": "lib/vectors.ts", "line": 6 },
+      "location": { "file": "lib/vectors.ts", "line": 31, "end_line": 35 },
+      "call_chain": [
+        { "file": "app/api/search/route.ts", "line": 6, "name": "POST" },
+        { "file": "lib/vectors.ts", "line": 24, "name": "searchHelpCenter" },
+        { "file": "lib/vectors.ts", "line": 31, "name": "embed" }
+      ],
+      "trigger": { "kind": "http", "detail": "POST /api/search", "entrypoint_id": "route:POST /api/search" },
+      "gating": "query.length >= 3",
+      "system_prompt": null,
+      "messages": null,
+      "tools": [],
+      "params": { "dimensions": 1536, "stream": false },
+      "requests": [
+        {
+          "id": "req-001",
+          "grade": "representative",
+          "request_grade": "representative",
+          "response_grade": "unresolved",
+          "provenance": { "type": "static", "path": "lib/vectors.ts", "line": 31 },
+          "request_file": "captures/cs-003/req-001.request.json",
+          "response_file": null,
+          "input_context": "example query: 'refund policy' (shape only; every query differs)",
+          "redactions": [],
+          "reproduce": "curl -s http://localhost:3000/api/search -d '{\"q\":\"refund policy\"}'",
+          "note": "embedding values are 1536 floats; represented truncated for readability",
+          "request": {
+            "model": "text-embedding-3-small",
+            "input": "refund policy",
+            "dimensions": 1536
+          },
+          "response": null,
+          "blocked": {
+            "reason": "embedding vectors are generated per query at runtime; no recorded response in the repo",
+            "needs": "one recorded embedding response or a live call with approval",
+            "attempts": ["searched tests/fixtures", "searched logs", "searched eval dataset (no embeddings)"]
+          }
+        }
+      ],
+      "notes": "Embedding drives RAG retrieval for cs-001; grades are lower because the input is user-query dependent."
+    }
+  ],
+  "flow": {
+    "description": "A support question retrieves help-center docs (embedding + vector search), then streams an answer through the agent. Separately, a nightly cron summarizes the day's conversations with Anthropic.",
+    "edges": [
+      { "from": "route:POST /api/chat", "to": "cs-001", "via": "runAgent -> complete", "when": "on POST" },
+      { "from": "route:POST /api/search", "to": "cs-003", "via": "searchHelpCenter -> embed", "when": "on POST" },
+      { "from": "job:nightly-digest", "to": "cs-002", "via": "runDigest -> summarizeConversations", "when": "cron 02:00" }
+    ]
+  },
+  "redaction": {
+    "rules": ["authorization -> <REDACTED:bearer>", "openai_api_key -> <REDACTED:api_key>", "x-api-key -> <REDACTED:api_key>"],
+    "applied_to": ["captures/**"]
+  },
+  "limitations": [
+    "cs-001 response not captured (streamed); only the serialized request is shown.",
+    "cs-003 is representative and its response is unresolved; embedding values truncated.",
+    "Third-party SDK internals (ai@5, @anthropic-ai/sdk) not mapped; only in-repo calls."
+  ]
+}
