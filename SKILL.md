@@ -114,6 +114,8 @@ The viewer must show:
 - provenance + reproduce command + redaction notice per payload
 - offline, no external requests, no CDN assets
 
+The shipped viewer also renders prompts as a transcript with placeholders highlighted, supports system/light/dark themes (`report.html?theme=light|dark`), keyboard navigation (`j`/`k`, `1`–`5`, `/`, `t`), and prints cleanly to PDF.
+
 Personalize styling to the repo only if trivial (name/logo/colors). Keep the data contract stable.
 
 ### Phase 6 — Verify (do not skip)

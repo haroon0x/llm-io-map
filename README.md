@@ -67,7 +67,15 @@ The agent will:
 
 Browse [`examples/report.example.html`](examples/report.example.html) for a rendered sample (open locally in a browser), and [`assets/manifest.example.json`](assets/manifest.example.json) for the data contract.
 
-Two views, one offline file: the [report overview](examples/screenshot-overview.png) (evidence breakdown, entrypoints, call sites) and a call site's [raw I/O](examples/screenshot.png) with per-payload grades, provenance, and reproduce commands.
+Three views, one offline file:
+
+| | |
+|---|---|
+| ![Report overview](examples/screenshot-overview.png) | **Overview** — evidence ladder, entrypoints, call sites, dismissed surfaces, limitations |
+| ![Raw I/O](examples/screenshot.png) | **Raw I/O** — request/response panes with separate grades, provenance, reproduce commands |
+| ![Prompt transcript](examples/screenshot-prompt.png) | **Prompt** — system prompt and messages as a transcript, `{placeholders}` highlighted |
+
+The viewer is self-contained and quiet: it follows your system theme, toggles light/dark (or `report.html?theme=light`), prints cleanly to PDF, and ships keyboard navigation (`j`/`k` sites, `1`–`5` tabs, `/` filter, `t` theme).
 
 ## What it refuses to do
 
